@@ -26,12 +26,16 @@ class DataReader(object):
         ]
         data = [np.load(os.path.join(data_dir, '{}.npy'.format(i))) for i in data_cols]
 
+        # for experiment
+        for k in range(len(data)):
+            data[k] = data[k][:10000]
+
         self.test_df = DataFrame(columns=data_cols, data=data)
         self.train_df, self.val_df = self.test_df.train_test_split(train_size=0.95)
 
-        print 'train size', len(self.train_df)
-        print 'val size', len(self.val_df)
-        print 'test size', len(self.test_df)
+        print(('train size', len(self.train_df)))
+        print(('val size', len(self.val_df)))
+        print(('test size', len(self.test_df)))
 
     def train_batch_generator(self, batch_size):
         return self.batch_generator(
@@ -120,29 +124,31 @@ class cnn(TFBaseModel):
         self.num_decode_steps = num_decode_steps
         super(cnn, self).__init__(**kwargs)
 
+    # subtract mean
     def transform(self, x):
-        return tf.log(x + 1) - tf.expand_dims(self.log_x_encode_mean, 1)
+        return tf.log1p(x) - tf.expand_dims(self.log_x_encode_mean, 1)
 
     def inverse_transform(self, x):
-        return tf.exp(x + tf.expand_dims(self.log_x_encode_mean, 1)) - 1
+        #return tf.exp(x + tf.expand_dims(self.log_x_encode_mean, 1)) - 1
+        return tf.expm1(x + tf.expand_dims(self.log_x_encode_mean, 1))
 
     def get_input_sequences(self):
-        self.x_encode = tf.placeholder(tf.float32, [None, None])
-        self.encode_len = tf.placeholder(tf.int32, [None])
-        self.y_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
-        self.decode_len = tf.placeholder(tf.int32, [None])
-        self.is_nan_encode = tf.placeholder(tf.float32, [None, None])
-        self.is_nan_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
+        self.x_encode = tf.placeholder(tf.float32, [self.batch_size, None])
+        self.encode_len = tf.placeholder(tf.int32, [self.batch_size])
+        self.y_decode = tf.placeholder(tf.float32, [self.batch_size, self.num_decode_steps])
+        self.decode_len = tf.placeholder(tf.int32, [self.batch_size])
+        self.is_nan_encode = tf.placeholder(tf.float32, [self.batch_size, None])
+        self.is_nan_decode = tf.placeholder(tf.float32, [self.batch_size, self.num_decode_steps])
 
-        self.page_id = tf.placeholder(tf.int32, [None])
-        self.project = tf.placeholder(tf.int32, [None])
-        self.access = tf.placeholder(tf.int32, [None])
-        self.agent = tf.placeholder(tf.int32, [None])
+        self.page_id = tf.placeholder(tf.int32, [self.batch_size])
+        self.project = tf.placeholder(tf.int32, [self.batch_size])
+        self.access = tf.placeholder(tf.int32, [self.batch_size])
+        self.agent = tf.placeholder(tf.int32, [self.batch_size])
 
         self.keep_prob = tf.placeholder(tf.float32)
         self.is_training = tf.placeholder(tf.bool)
 
-        self.log_x_encode_mean = sequence_mean(tf.log(self.x_encode + 1), self.encode_len)
+        self.log_x_encode_mean = sequence_mean(tf.log1p(self.x_encode), self.encode_len) #length is batch length
         self.log_x_encode = self.transform(self.x_encode)
         self.x = tf.expand_dims(self.log_x_encode, 2)
 
@@ -184,7 +190,7 @@ class cnn(TFBaseModel):
                 output_units=2*self.residual_channels,
                 convolution_width=filter_width,
                 causal=True,
-                dilation_rate=[dilation],
+                dilation_rate=dilation,
                 scope='dilated-conv-encode-{}'.format(i)
             )
             conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
@@ -225,7 +231,7 @@ class cnn(TFBaseModel):
                 output_units=2*self.residual_channels,
                 convolution_width=filter_width,
                 causal=True,
-                dilation_rate=[dilation],
+                dilation_rate=dilation,
                 scope='dilated-conv-decode-{}'.format(i)
             )
             conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
@@ -248,7 +254,8 @@ class cnn(TFBaseModel):
         return y_hat
 
     def decode(self, x, conv_inputs, features):
-        batch_size = tf.shape(x)[0]
+        #batch_size = tf.shape(x)[0]
+        batch_size = self.batch_size
 
         # initialize state tensor arrays
         state_queues = []
@@ -297,15 +304,15 @@ class cnn(TFBaseModel):
 
                 state = queue.read(time)
                 with tf.variable_scope('dilated-conv-decode-{}'.format(i), reuse=True):
-                    w_conv = tf.get_variable('weights'.format(i))
-                    b_conv = tf.get_variable('biases'.format(i))
+                    w_conv = tf.get_variable('weights')
+                    b_conv = tf.get_variable('biases')
                     dilated_conv = tf.matmul(state, w_conv[0, :, :]) + tf.matmul(x_proj, w_conv[1, :, :]) + b_conv
                 conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=1)
                 dilated_conv = tf.nn.tanh(conv_filter)*tf.nn.sigmoid(conv_gate)
 
                 with tf.variable_scope('dilated-conv-proj-decode-{}'.format(i), reuse=True):
-                    w_proj = tf.get_variable('weights'.format(i))
-                    b_proj = tf.get_variable('biases'.format(i))
+                    w_proj = tf.get_variable('weights')
+                    b_proj = tf.get_variable('biases')
                     concat_outputs = tf.matmul(dilated_conv, w_proj) + b_proj
                 skips, residuals = tf.split(concat_outputs, [self.skip_channels, self.residual_channels], axis=1)
 
@@ -393,7 +400,7 @@ if __name__ == '__main__':
         prediction_dir=os.path.join(base_dir, 'predictions'),
         optimizer='adam',
         learning_rate=.001,
-        batch_size=128,
+        batch_size=12,
         num_training_steps=200000,
         early_stopping_steps=5000,
         warm_start_init_step=0,
@@ -411,6 +418,8 @@ if __name__ == '__main__':
         filter_widths=[2 for i in range(8)]*3,
         num_decode_steps=64,
     )
+
+
     nn.fit()
     nn.restore()
     nn.predict()

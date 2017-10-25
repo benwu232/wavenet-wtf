@@ -19,8 +19,10 @@ def temporal_convolution_layer(inputs, output_units, convolution_width, causal=F
     """
     with tf.variable_scope(scope, reuse=reuse):
         if causal:
-            shift = (convolution_width / 2) + (int(dilation_rate[0] - 1) / 2)
-            pad = tf.zeros([tf.shape(inputs)[0], shift, inputs.shape.as_list()[2]])
+            #shift = (convolution_width // 2) + (int(dilation_rate[0] - 1) // 2)
+            pad_len = dilation_rate * (convolution_width - 1)
+            print('kernel_size = {}, dilation = {}, shift = {}'.format(convolution_width, dilation_rate, pad_len))
+            pad = tf.zeros([tf.shape(inputs)[0], pad_len, inputs.shape.as_list()[2]])
             inputs = tf.concat([pad, inputs], axis=1)
 
         W = tf.get_variable(
@@ -32,7 +34,7 @@ def temporal_convolution_layer(inputs, output_units, convolution_width, causal=F
             shape=[convolution_width, shape(inputs, 2), output_units]
         )
 
-        z = tf.nn.convolution(inputs, W, padding='SAME', dilation_rate=dilation_rate)
+        z = tf.nn.convolution(inputs, W, padding='SAME', dilation_rate=[dilation_rate])
         if bias:
             b = tf.get_variable(
                 name='biases',
@@ -40,9 +42,18 @@ def temporal_convolution_layer(inputs, output_units, convolution_width, causal=F
                 shape=[output_units]
             )
             z = z + b
-        z = activation(z) if activation else z
-        z = tf.nn.dropout(z, dropout) if dropout is not None else z
-        z = z[:, :-shift, :] if causal else z
+
+        if activation:
+            z = activation(z)
+
+        if dropout and dropout > 0:
+            z = tf.nn.dropout(z, dropout)
+
+        if causal:
+            z = z[:, :-pad_len, :]
+        #z = activation(z) if activation else z
+        #z = tf.nn.dropout(z, dropout) if dropout is not None else z
+        #z = z[:, :-shift, :] if causal else z
         return z
 
 
@@ -80,8 +91,13 @@ def time_distributed_dense_layer(inputs, output_units, bias=True, activation=Non
         if batch_norm is not None:
             z = tf.layers.batch_normalization(z, training=batch_norm, reuse=reuse)
 
-        z = activation(z) if activation else z
-        z = tf.nn.dropout(z, dropout) if dropout is not None else z
+        if activation:
+            z = activation(z)
+
+        if dropout and dropout > 0:
+            z = tf.nn.dropout(z, dropout)
+        #z = activation(z) if activation else z
+        #z = tf.nn.dropout(z, dropout) if dropout is not None else z
         return z
 
 
@@ -91,12 +107,13 @@ def shape(tensor, dim=None):
         return tensor.shape.as_list()
     else:
         return tensor.shape.as_list()[dim]
+        #return tensor.shape[dim].__int__()
 
 
 def sequence_smape(y, y_hat, sequence_lengths, is_nan):
     max_sequence_length = tf.shape(y)[1]
     y = tf.cast(y, tf.float32)
-    smape = 2*(tf.abs(y_hat - y) / (tf.abs(y) + tf.abs(y_hat)))
+    smape = 200*(tf.abs(y_hat - y) / (tf.abs(y) + tf.abs(y_hat)))
 
     # ignore discontinuity
     zero_loss = 2.0*tf.ones_like(smape)

@@ -8,6 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from tf_utils import shape
+import imp
 
 
 class TFBaseModel(object):
@@ -98,13 +99,17 @@ class TFBaseModel(object):
 
         self.graph = self.build_graph()
         self.session = tf.Session(graph=self.graph)
-        print 'built graph'
+        print('built graph')
 
     def calculate_loss(self):
         raise NotImplementedError('subclass must implement this')
 
     def fit(self):
         with self.session.as_default():
+
+            from tensorflow.python import debug as tf_debug
+            #self.session = tf_debug.LocalCLIDebugWrapperSession(self.session)
+            #self.session.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
             if self.warm_start_init_step:
                 self.restore(self.warm_start_init_step)
@@ -125,7 +130,7 @@ class TFBaseModel(object):
             while step < self.num_training_steps:
 
                 # validation evaluation
-                val_batch_df = val_generator.next()
+                val_batch_df = next(val_generator)
                 val_feed_dict = {
                     getattr(self, placeholder_name, None): data
                     for placeholder_name, data in val_batch_df if hasattr(self, placeholder_name)
@@ -144,18 +149,18 @@ class TFBaseModel(object):
                 val_loss_history.append(val_loss)
 
                 if hasattr(self, 'monitor_tensors'):
-                    for name, tensor in self.monitor_tensors.items():
+                    for name, tensor in list(self.monitor_tensors.items()):
                         [np_val] = self.session.run([tensor], feed_dict=val_feed_dict)
-                        print name
-                        print 'min', np_val.min()
-                        print 'max', np_val.max()
-                        print 'mean', np_val.mean()
-                        print 'std', np_val.std()
-                        print 'nans', np.isnan(np_val).sum()
-                        print
+                        print(name)
+                        print('min', np_val.min())
+                        print('max', np_val.max())
+                        print('mean', np_val.mean())
+                        print('std', np_val.std())
+                        print('nans', np.isnan(np_val).sum())
+                        print()
 
                 # train step
-                train_batch_df = train_generator.next()
+                train_batch_df = next(train_generator)
                 train_feed_dict = {
                     getattr(self, placeholder_name, None): data
                     for placeholder_name, data in train_batch_df if hasattr(self, placeholder_name)
@@ -234,7 +239,7 @@ class TFBaseModel(object):
                 if hasattr(self, 'is_training'):
                     test_feed_dict.update({self.is_training: False})
 
-                tensor_names, tf_tensors = zip(*self.prediction_tensors.items())
+                tensor_names, tf_tensors = list(zip(*list(self.prediction_tensors.items())))
                 np_tensors = self.session.run(
                     fetches=tf_tensors,
                     feed_dict=test_feed_dict
@@ -242,14 +247,14 @@ class TFBaseModel(object):
                 for tensor_name, tensor in zip(tensor_names, np_tensors):
                     prediction_dict[tensor_name].append(tensor)
 
-            for tensor_name, tensor in prediction_dict.items():
+            for tensor_name, tensor in list(prediction_dict.items()):
                 np_tensor = np.concatenate(tensor, 0)
                 save_file = os.path.join(self.prediction_dir, '{}.npy'.format(tensor_name))
                 logging.info('saving {} with shape {} to {}'.format(tensor_name, np_tensor.shape, save_file))
                 np.save(save_file, np_tensor)
 
         if hasattr(self, 'parameter_tensors'):
-            for tensor_name, tensor in self.parameter_tensors.items():
+            for tensor_name, tensor in list(self.parameter_tensors.items()):
                 np_tensor = tensor.eval(self.session)
 
                 save_file = os.path.join(self.prediction_dir, '{}.npy'.format(tensor_name))
@@ -288,7 +293,7 @@ class TFBaseModel(object):
         date_str = datetime.now().strftime('%Y-%m-%d_%H-%M')
         log_file = 'log_{}.txt'.format(date_str)
 
-        reload(logging)  # bad
+        imp.reload(logging)  # bad
         logging.basicConfig(
             filename=os.path.join(log_dir, log_file),
             level=logging.INFO,

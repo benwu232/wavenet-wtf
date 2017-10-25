@@ -27,14 +27,14 @@ class DataFrame(object):
         self.length = lengths[0]
         self.columns = columns
         self.data = data
-        self.dict = dict(zip(self.columns, self.data))
+        self.dict = dict(list(zip(self.columns, self.data)))
         self.idx = np.arange(self.length)
 
     def shapes(self):
-        return pd.Series(dict(zip(self.columns, [mat.shape for mat in self.data])))
+        return pd.Series(dict(list(zip(self.columns, [mat.shape for mat in self.data]))))
 
     def dtypes(self):
-        return pd.Series(dict(zip(self.columns, [mat.dtype for mat in self.data])))
+        return pd.Series(dict(list(zip(self.columns, [mat.dtype for mat in self.data]))))
 
     def shuffle(self):
         np.random.shuffle(self.idx)
@@ -67,7 +67,7 @@ class DataFrame(object):
         return DataFrame(copy.copy(self.columns), [mat[mask] for mat in self.data])
 
     def __iter__(self):
-        return self.dict.items().__iter__()
+        return list(self.dict.items()).__iter__()
 
     def __len__(self):
         return self.length
@@ -77,7 +77,7 @@ class DataFrame(object):
             return self.dict[key]
 
         elif isinstance(key, int):
-            return pd.Series(dict(zip(self.columns, [mat[self.idx[key]] for mat in self.data])))
+            return pd.Series(dict(list(zip(self.columns, [mat[self.idx[key]] for mat in self.data]))))
 
     def __setitem__(self, key, value):
         assert value.shape[0] == len(self), 'matrix first dimension does not match'

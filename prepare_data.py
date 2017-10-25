@@ -1,4 +1,4 @@
-from __future__ import unicode_literals
+
 
 import os
 
@@ -23,10 +23,10 @@ def nan_fill_forward(x):
     return x
 
 
-df = pd.read_csv('data/raw/train_final.csv', encoding='utf-8')
+df = pd.read_csv('data/raw/train_2.csv', encoding='utf-8')
 date_cols = [i for i in df.columns if i != 'Page']
 
-df['name'], df['project'], df['access'], df['agent'] = zip(*df['Page'].apply(parse_page))
+df['name'], df['project'], df['access'], df['agent'] = list(zip(*df['Page'].apply(parse_page)))
 
 le = LabelEncoder()
 df['project'] = le.fit_transform(df['project'])
