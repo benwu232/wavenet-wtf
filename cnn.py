@@ -10,9 +10,11 @@ from tf_utils import (
     sequence_mean, sequence_smape, shape
 )
 
+TEST = True
+TEST = False
+test_len = 3000
 
 class DataReader(object):
-
     def __init__(self, data_dir):
         data_cols = [
             'data',
@@ -26,9 +28,10 @@ class DataReader(object):
         ]
         data = [np.load(os.path.join(data_dir, '{}.npy'.format(i))) for i in data_cols]
 
-        # for experiment
-        for k in range(len(data)):
-            data[k] = data[k][:10000]
+        if TEST:
+            # for experiment
+            for k in range(len(data)):
+                data[k] = data[k][:test_len]
 
         self.test_df = DataFrame(columns=data_cols, data=data)
         self.train_df, self.val_df = self.test_df.train_test_split(train_size=0.95)
@@ -392,6 +395,10 @@ if __name__ == '__main__':
     base_dir = './'
 
     dr = DataReader(data_dir=os.path.join(base_dir, 'data/processed/'))
+    if TEST:
+        batch_size = 12
+    else:
+        batch_size = 128
 
     nn = cnn(
         reader=dr,
@@ -400,7 +407,7 @@ if __name__ == '__main__':
         prediction_dir=os.path.join(base_dir, 'predictions'),
         optimizer='adam',
         learning_rate=.001,
-        batch_size=12,
+        batch_size=batch_size,
         num_training_steps=200000,
         early_stopping_steps=5000,
         warm_start_init_step=0,
