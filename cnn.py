@@ -10,9 +10,11 @@ from tf_utils import (
     sequence_mean, sequence_smape, shape
 )
 
-TEST = True
 TEST = False
-test_len = 3000
+TEST = True
+
+test_len = 10000
+test_len = 5000
 
 LOG_TRANS = True
 
@@ -144,273 +146,284 @@ class cnn(TFBaseModel):
             return tf.expm1(x + tf.expand_dims(self.log_x_encode_mean, 1))
 
     def get_input_sequences(self):
-        self.x_encode = tf.placeholder(tf.float32, [self.batch_size, None])
-        self.encode_len = tf.placeholder(tf.int32, [self.batch_size])
-        self.y_decode = tf.placeholder(tf.float32, [self.batch_size, self.num_decode_steps])
-        self.decode_len = tf.placeholder(tf.int32, [self.batch_size])
-        self.is_nan_encode = tf.placeholder(tf.float32, [self.batch_size, None])
-        self.is_nan_decode = tf.placeholder(tf.float32, [self.batch_size, self.num_decode_steps])
+        with tf.name_scope('InputData'):
+            self.x_encode = tf.placeholder(tf.float32, [self.batch_size, None], name='x_encode')
+            self.encode_len = tf.placeholder(tf.int32, [self.batch_size], name='encode_len')
+            self.y_decode = tf.placeholder(tf.float32, [self.batch_size, self.num_decode_steps], name='y_decode')
+            self.decode_len = tf.placeholder(tf.int32, [self.batch_size], name='decode_len')
+            self.is_nan_encode = tf.placeholder(tf.float32, [self.batch_size, None], name='is_nan_encode')
+            self.is_nan_decode = tf.placeholder(tf.float32, [self.batch_size, self.num_decode_steps], name='is_nan_decode')
 
-        self.page_id = tf.placeholder(tf.int32, [self.batch_size])
-        self.project = tf.placeholder(tf.int32, [self.batch_size])
-        self.access = tf.placeholder(tf.int32, [self.batch_size])
-        self.agent = tf.placeholder(tf.int32, [self.batch_size])
+            self.page_id = tf.placeholder(tf.int32, [self.batch_size], name='page_id')
+            self.project = tf.placeholder(tf.int32, [self.batch_size], name='project')
+            self.access = tf.placeholder(tf.int32, [self.batch_size], name='access')
+            self.agent = tf.placeholder(tf.int32, [self.batch_size], name='agent')
 
-        if not TEST:
-            self.x_encode = tf.placeholder(tf.float32, [None, None])
-            self.encode_len = tf.placeholder(tf.int32, [None])
-            self.y_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
-            self.decode_len = tf.placeholder(tf.int32, [None])
-            self.is_nan_encode = tf.placeholder(tf.float32, [None, None])
-            self.is_nan_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
+            if not TEST:
+                self.x_encode = tf.placeholder(tf.float32, [None, None])
+                self.encode_len = tf.placeholder(tf.int32, [None])
+                self.y_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
+                self.decode_len = tf.placeholder(tf.int32, [None])
+                self.is_nan_encode = tf.placeholder(tf.float32, [None, None])
+                self.is_nan_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
 
-            self.page_id = tf.placeholder(tf.int32, [None])
-            self.project = tf.placeholder(tf.int32, [None])
-            self.access = tf.placeholder(tf.int32, [None])
-            self.agent = tf.placeholder(tf.int32, [None])
+                self.page_id = tf.placeholder(tf.int32, [None])
+                self.project = tf.placeholder(tf.int32, [None])
+                self.access = tf.placeholder(tf.int32, [None])
+                self.agent = tf.placeholder(tf.int32, [None])
 
-        self.keep_prob = tf.placeholder(tf.float32)
-        self.is_training = tf.placeholder(tf.bool)
+            self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
+            self.is_training = tf.placeholder(tf.bool, name='is_training')
 
-        self.log_x_encode_mean = sequence_mean(tf.log1p(self.x_encode), self.encode_len) #length is batch length
-        self.log_x_encode = self.transform(self.x_encode)
-        self.x = tf.expand_dims(self.log_x_encode, 2)
+            self.log_x_encode_mean = sequence_mean(tf.log1p(self.x_encode), self.encode_len) #length is batch length
+            self.log_x_encode = self.transform(self.x_encode)
+            self.x = tf.expand_dims(self.log_x_encode, 2)
 
-        self.encode_features = tf.concat([
-            tf.expand_dims(self.is_nan_encode, 2),
-            tf.expand_dims(tf.cast(tf.equal(self.x_encode, 0.0), tf.float32), 2),
-            tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
-            tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, tf.shape(self.x_encode)[1], 1)),
-            tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, tf.shape(self.x_encode)[1], 1)),
-            tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, tf.shape(self.x_encode)[1], 1)),
-        ], axis=2)
+            self.encode_features = tf.concat([
+                tf.expand_dims(self.is_nan_encode, 2),
+                tf.expand_dims(tf.cast(tf.equal(self.x_encode, 0.0), tf.float32), 2),
+                tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
+                tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, tf.shape(self.x_encode)[1], 1)),
+                tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, tf.shape(self.x_encode)[1], 1)),
+                tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, tf.shape(self.x_encode)[1], 1)),
+            ], axis=2, name='aux_enc_features')
 
-        decode_idx = tf.tile(tf.expand_dims(tf.range(self.num_decode_steps), 0), (tf.shape(self.y_decode)[0], 1))
-        self.decode_features = tf.concat([
-            tf.one_hot(decode_idx, self.num_decode_steps),
-            tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
-            tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, self.num_decode_steps, 1)),
-            tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, self.num_decode_steps, 1)),
-            tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, self.num_decode_steps, 1)),
-        ], axis=2)
+            decode_idx = tf.tile(tf.expand_dims(tf.range(self.num_decode_steps), 0), (tf.shape(self.y_decode)[0], 1))
+            self.decode_features = tf.concat([
+                tf.one_hot(decode_idx, self.num_decode_steps),
+                tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
+                tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, self.num_decode_steps, 1)),
+                tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, self.num_decode_steps, 1)),
+                tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, self.num_decode_steps, 1)),
+            ], axis=2, name='aux_enc_features')
 
-        return self.x
+            return self.x
 
     def encode(self, x, features):
-        x = tf.concat([x, features], axis=2)
+        with tf.name_scope('Encoder'):
+            x = tf.concat([x, features], axis=2)
 
-        inputs = time_distributed_dense_layer(
-            inputs=x,
-            output_units=self.residual_channels,
-            activation=tf.nn.tanh,
-            scope='x-proj-encode'
-        )
-
-        skip_outputs = []
-        conv_inputs = [inputs]
-        for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
-            dilated_conv = temporal_convolution_layer(
-                inputs=inputs,
-                output_units=2*self.residual_channels,
-                convolution_width=filter_width,
-                causal=True,
-                dilation_rate=dilation,
-                scope='dilated-conv-encode-{}'.format(i)
+            inputs = time_distributed_dense_layer(
+                inputs=x,
+                output_units=self.residual_channels,
+                activation=tf.nn.tanh,
+                scope='x-proj-encode'
             )
-            conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
-            dilated_conv = tf.nn.tanh(conv_filter)*tf.nn.sigmoid(conv_gate)
 
-            outputs = time_distributed_dense_layer(
-                inputs=dilated_conv,
-                output_units=self.skip_channels + self.residual_channels,
-                scope='dilated-conv-proj-encode-{}'.format(i)
-            )
-            skips, residuals = tf.split(outputs, [self.skip_channels, self.residual_channels], axis=2)
-
-            inputs += residuals
-            conv_inputs.append(inputs)
-            skip_outputs.append(skips)
-
-        skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
-        h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu)
-        y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2')
-
-        return y_hat, conv_inputs[:-1]
-
-    def initialize_decode_params(self, x, features):
-        x = tf.concat([x, features], axis=2)
-
-        inputs = time_distributed_dense_layer(
-            inputs=x,
-            output_units=self.residual_channels,
-            activation=tf.nn.tanh,
-            scope='x-proj-decode'
-        )
-
-        skip_outputs = []
-        conv_inputs = [inputs]
-        for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
-            dilated_conv = temporal_convolution_layer(
-                inputs=inputs,
-                output_units=2*self.residual_channels,
-                convolution_width=filter_width,
-                causal=True,
-                dilation_rate=dilation,
-                scope='dilated-conv-decode-{}'.format(i)
-            )
-            conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
-            dilated_conv = tf.nn.tanh(conv_filter)*tf.nn.sigmoid(conv_gate)
-
-            outputs = time_distributed_dense_layer(
-                inputs=dilated_conv,
-                output_units=self.skip_channels + self.residual_channels,
-                scope='dilated-conv-proj-decode-{}'.format(i)
-            )
-            skips, residuals = tf.split(outputs, [self.skip_channels, self.residual_channels], axis=2)
-
-            inputs += residuals
-            conv_inputs.append(inputs)
-            skip_outputs.append(skips)
-
-        skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
-        h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu)
-        y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2')
-        return y_hat
-
-    def decode(self, x, conv_inputs, features):
-        batch_size = tf.shape(x)[0]
-        if TEST:
-            batch_size = self.batch_size
-
-        # initialize state tensor arrays
-        state_queues = []
-        for i, (conv_input, dilation) in enumerate(zip(conv_inputs, self.dilations)):
-            batch_idx = tf.range(batch_size)
-            batch_idx = tf.tile(tf.expand_dims(batch_idx, 1), (1, dilation))
-            batch_idx = tf.reshape(batch_idx, [-1])
-
-            queue_begin_time = self.encode_len - dilation - 1
-            temporal_idx = tf.expand_dims(queue_begin_time, 1) + tf.expand_dims(tf.range(dilation), 0)
-            temporal_idx = tf.reshape(temporal_idx, [-1])
-
-            idx = tf.stack([batch_idx, temporal_idx], axis=1)
-            slices = tf.reshape(tf.gather_nd(conv_input, idx), (batch_size, dilation, shape(conv_input, 2)))
-
-            layer_ta = tf.TensorArray(dtype=tf.float32, size=dilation + self.num_decode_steps)
-            layer_ta = layer_ta.unstack(tf.transpose(slices, (1, 0, 2)))
-            state_queues.append(layer_ta)
-
-        # initialize feature tensor array
-        features_ta = tf.TensorArray(dtype=tf.float32, size=self.num_decode_steps)
-        features_ta = features_ta.unstack(tf.transpose(features, (1, 0, 2)))
-
-        # initialize output tensor array
-        emit_ta = tf.TensorArray(size=self.num_decode_steps, dtype=tf.float32)
-
-        # initialize other loop vars
-        elements_finished = 0 >= self.decode_len
-        time = tf.constant(0, dtype=tf.int32)
-
-        # get initial x input
-        current_idx = tf.stack([tf.range(tf.shape(self.encode_len)[0]), self.encode_len - 1], axis=1)
-        initial_input = tf.gather_nd(x, current_idx)
-
-        def loop_fn(time, current_input, queues):
-            current_features = features_ta.read(time)
-            current_input = tf.concat([current_input, current_features], axis=1)
-
-            with tf.variable_scope('x-proj-decode', reuse=True):
-                w_x_proj = tf.get_variable('weights')
-                b_x_proj = tf.get_variable('biases')
-                x_proj = tf.nn.tanh(tf.matmul(current_input, w_x_proj) + b_x_proj)
-
-            skip_outputs, updated_queues = [], []
-            for i, (conv_input, queue, dilation) in enumerate(zip(conv_inputs, queues, self.dilations)):
-
-                state = queue.read(time)
-                with tf.variable_scope('dilated-conv-decode-{}'.format(i), reuse=True):
-                    w_conv = tf.get_variable('weights')
-                    b_conv = tf.get_variable('biases')
-                    dilated_conv = tf.matmul(state, w_conv[0, :, :]) + tf.matmul(x_proj, w_conv[1, :, :]) + b_conv
-                conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=1)
+            skip_outputs = []
+            conv_inputs = [inputs]
+            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
+                dilated_conv = temporal_convolution_layer(
+                    inputs=inputs,
+                    output_units=2*self.residual_channels,
+                    convolution_width=filter_width,
+                    causal=True,
+                    dilation_rate=dilation,
+                    scope='dilated-conv-encode-{}'.format(i)
+                )
+                conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
                 dilated_conv = tf.nn.tanh(conv_filter)*tf.nn.sigmoid(conv_gate)
 
-                with tf.variable_scope('dilated-conv-proj-decode-{}'.format(i), reuse=True):
-                    w_proj = tf.get_variable('weights')
-                    b_proj = tf.get_variable('biases')
-                    concat_outputs = tf.matmul(dilated_conv, w_proj) + b_proj
-                skips, residuals = tf.split(concat_outputs, [self.skip_channels, self.residual_channels], axis=1)
+                outputs = time_distributed_dense_layer(
+                    inputs=dilated_conv,
+                    output_units=self.skip_channels + self.residual_channels,
+                    scope='dilated-conv-proj-encode-{}'.format(i)
+                )
+                skips, residuals = tf.split(outputs, [self.skip_channels, self.residual_channels], axis=2)
 
-                x_proj += residuals
+                inputs += residuals
+                conv_inputs.append(inputs)
                 skip_outputs.append(skips)
-                updated_queues.append(queue.write(time + dilation, x_proj))
 
-            skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=1))
-            with tf.variable_scope('dense-decode-1', reuse=True):
-                w_h = tf.get_variable('weights')
-                b_h = tf.get_variable('biases')
-                h = tf.nn.relu(tf.matmul(skip_outputs, w_h) + b_h)
+            skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
+            h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu)
+            y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2')
 
-            with tf.variable_scope('dense-decode-2', reuse=True):
-                w_y = tf.get_variable('weights')
-                b_y = tf.get_variable('biases')
-                y_hat = tf.matmul(h, w_y) + b_y
+            return y_hat, conv_inputs[:-1]
 
-            elements_finished = (time >= self.decode_len)
-            finished = tf.reduce_all(elements_finished)
+    def initialize_decode_params(self, x, features):
+        with tf.name_scope('PreDecoder'):
+            x = tf.concat([x, features], axis=2)
 
-            next_input = tf.cond(
-                finished,
-                lambda: tf.zeros([batch_size, 1], dtype=tf.float32),
-                lambda: y_hat
+            inputs = time_distributed_dense_layer(
+                inputs=x,
+                output_units=self.residual_channels,
+                activation=tf.nn.tanh,
+                scope='x-proj-decode'
             )
-            next_elements_finished = (time >= self.decode_len - 1)
 
-            return (next_elements_finished, next_input, updated_queues)
+            skip_outputs = []
+            conv_inputs = [inputs]
+            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
+                dilated_conv = temporal_convolution_layer(
+                    inputs=inputs,
+                    output_units=2*self.residual_channels,
+                    convolution_width=filter_width,
+                    causal=True,
+                    dilation_rate=dilation,
+                    scope='dilated-conv-decode-{}'.format(i)
+                )
+                conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
+                dilated_conv = tf.nn.tanh(conv_filter)*tf.nn.sigmoid(conv_gate)
 
-        def condition(unused_time, elements_finished, *_):
-            return tf.logical_not(tf.reduce_all(elements_finished))
+                outputs = time_distributed_dense_layer(
+                    inputs=dilated_conv,
+                    output_units=self.skip_channels + self.residual_channels,
+                    scope='dilated-conv-proj-decode-{}'.format(i)
+                )
+                skips, residuals = tf.split(outputs, [self.skip_channels, self.residual_channels], axis=2)
 
-        def body(time, elements_finished, emit_ta, *state_queues):
-            (next_finished, emit_output, state_queues) = loop_fn(time, initial_input, state_queues)
+                inputs += residuals
+                conv_inputs.append(inputs)
+                skip_outputs.append(skips)
 
-            emit = tf.where(elements_finished, tf.zeros_like(emit_output), emit_output)
-            emit_ta = emit_ta.write(time, emit)
+            skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
+            h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu)
+            y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2')
+            return y_hat
 
-            elements_finished = tf.logical_or(elements_finished, next_finished)
-            return [time + 1, elements_finished, emit_ta] + list(state_queues)
+    def decode(self, x, conv_inputs, features):
+        with tf.name_scope('Decoder'):
+            batch_size = tf.shape(x)[0]
+            if TEST:
+                batch_size = self.batch_size
 
-        returned = tf.while_loop(
-            cond=condition,
-            body=body,
-            loop_vars=[time, elements_finished, emit_ta] + state_queues
-        )
+            # initialize state tensor arrays
+            state_queues = []
+            with tf.name_scope('WaveNetBlk'):
+                for i, (conv_input, dilation) in enumerate(zip(conv_inputs, self.dilations)):
+                    batch_idx = tf.range(batch_size)
+                    batch_idx = tf.tile(tf.expand_dims(batch_idx, 1), (1, dilation))
+                    batch_idx = tf.reshape(batch_idx, [-1])
 
-        outputs_ta = returned[2]
-        y_hat = tf.transpose(outputs_ta.stack(), (1, 0, 2))
-        return y_hat
+                    queue_begin_time = self.encode_len - dilation - 1
+                    temporal_idx = tf.expand_dims(queue_begin_time, 1) + tf.expand_dims(tf.range(dilation), 0)
+                    temporal_idx = tf.reshape(temporal_idx, [-1])
+
+                    idx = tf.stack([batch_idx, temporal_idx], axis=1)
+                    slices = tf.reshape(tf.gather_nd(conv_input, idx), (batch_size, dilation, shape(conv_input, 2)))
+
+                    layer_ta = tf.TensorArray(dtype=tf.float32, size=dilation + self.num_decode_steps)
+                    layer_ta = layer_ta.unstack(tf.transpose(slices, (1, 0, 2)))
+                    state_queues.append(layer_ta)
+
+            # initialize feature tensor array
+            features_ta = tf.TensorArray(dtype=tf.float32, size=self.num_decode_steps)
+            features_ta = features_ta.unstack(tf.transpose(features, (1, 0, 2)))
+
+            # initialize output tensor array
+            emit_ta = tf.TensorArray(size=self.num_decode_steps, dtype=tf.float32)
+
+            # initialize other loop vars
+            elements_finished = 0 >= self.decode_len
+            time = tf.constant(0, dtype=tf.int32)
+
+            # get initial x input
+            current_idx = tf.stack([tf.range(tf.shape(self.encode_len)[0]), self.encode_len - 1], axis=1)
+            initial_input = tf.gather_nd(x, current_idx)
+
+            def loop_fn(time, current_input, queues):
+                with tf.name_scope('LoopFunc'):
+                    current_features = features_ta.read(time)
+                    current_input = tf.concat([current_input, current_features], axis=1)
+
+                    with tf.variable_scope('x-proj-decode', reuse=True):
+                        w_x_proj = tf.get_variable('weights')
+                        b_x_proj = tf.get_variable('biases')
+                        x_proj = tf.nn.tanh(tf.matmul(current_input, w_x_proj) + b_x_proj)
+
+                    skip_outputs, updated_queues = [], []
+                    for i, (conv_input, queue, dilation) in enumerate(zip(conv_inputs, queues, self.dilations)):
+
+                        state = queue.read(time)
+                        with tf.variable_scope('dilated-conv-decode-{}'.format(i), reuse=True):
+                            w_conv = tf.get_variable('weights')
+                            b_conv = tf.get_variable('biases')
+                            dilated_conv = tf.matmul(state, w_conv[0, :, :]) + tf.matmul(x_proj, w_conv[1, :, :]) + b_conv
+                        conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=1)
+                        dilated_conv = tf.nn.tanh(conv_filter)*tf.nn.sigmoid(conv_gate)
+
+                        with tf.variable_scope('dilated-conv-proj-decode-{}'.format(i), reuse=True):
+                            w_proj = tf.get_variable('weights')
+                            b_proj = tf.get_variable('biases')
+                            concat_outputs = tf.matmul(dilated_conv, w_proj) + b_proj
+                        skips, residuals = tf.split(concat_outputs, [self.skip_channels, self.residual_channels], axis=1)
+
+                        x_proj += residuals
+                        skip_outputs.append(skips)
+                        updated_queues.append(queue.write(time + dilation, x_proj))
+
+                    skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=1))
+                    with tf.variable_scope('dense-decode-1', reuse=True):
+                        w_h = tf.get_variable('weights')
+                        b_h = tf.get_variable('biases')
+                        h = tf.nn.relu(tf.matmul(skip_outputs, w_h) + b_h)
+
+                    with tf.variable_scope('dense-decode-2', reuse=True):
+                        w_y = tf.get_variable('weights')
+                        b_y = tf.get_variable('biases')
+                        y_hat = tf.matmul(h, w_y) + b_y
+
+                    elements_finished = (time >= self.decode_len)
+                    finished = tf.reduce_all(elements_finished)
+
+                    next_input = tf.cond(
+                        finished,
+                        lambda: tf.zeros([batch_size, 1], dtype=tf.float32),
+                        lambda: y_hat
+                    )
+                    next_elements_finished = (time >= self.decode_len - 1)
+
+                    return (next_elements_finished, next_input, updated_queues)
+
+            def condition(unused_time, elements_finished, *_):
+                return tf.logical_not(tf.reduce_all(elements_finished))
+
+            def body(time, elements_finished, emit_ta, *state_queues):
+                with tf.name_scope('WhileBody'):
+                    (next_finished, emit_output, state_queues) = loop_fn(time, initial_input, state_queues)
+
+                    emit = tf.where(elements_finished, tf.zeros_like(emit_output), emit_output)
+                    emit_ta = emit_ta.write(time, emit)
+
+                    elements_finished = tf.logical_or(elements_finished, next_finished)
+                    return [time + 1, elements_finished, emit_ta] + list(state_queues)
+
+            returned = tf.while_loop(
+                cond=condition,
+                body=body,
+                loop_vars=[time, elements_finished, emit_ta] + state_queues
+            )
+
+            outputs_ta = returned[2]
+            y_hat = tf.transpose(outputs_ta.stack(), (1, 0, 2))
+            return y_hat
+
+    def inference(self):
+        with tf.name_scope('Inference'):
+            x = self.get_input_sequences()
+
+            y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features)
+            self.initialize_decode_params(x, features=self.decode_features)
+            y_hat_decode = self.decode(y_hat_encode, conv_inputs, features=self.decode_features)
+            y_hat_decode = self.inverse_transform(tf.squeeze(y_hat_decode, 2))
+            y_hat_decode = tf.nn.relu(y_hat_decode)
+
+            self.labels = self.y_decode
+            self.preds = y_hat_decode
+
+            self.prediction_tensors = {
+                'priors': self.x_encode,
+                'labels': self.labels,
+                'preds': self.preds,
+                'page_id': self.page_id,
+            }
+            return self.preds
 
     def calculate_loss(self):
-        x = self.get_input_sequences()
-
-        y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features)
-        self.initialize_decode_params(x, features=self.decode_features)
-        y_hat_decode = self.decode(y_hat_encode, conv_inputs, features=self.decode_features)
-        y_hat_decode = self.inverse_transform(tf.squeeze(y_hat_decode, 2))
-        y_hat_decode = tf.nn.relu(y_hat_decode)
-
-        self.labels = self.y_decode
-        self.preds = y_hat_decode
         self.loss = sequence_smape(self.labels, self.preds, self.decode_len, self.is_nan_decode)
-
-        self.prediction_tensors = {
-            'priors': self.x_encode,
-            'labels': self.labels,
-            'preds': self.preds,
-            'page_id': self.page_id,
-        }
-
         return self.loss
+
 
 
 if __name__ == '__main__':
