@@ -125,7 +125,7 @@ class cnn(TFBaseModel):
         self.residual_channels = residual_channels
         self.skip_channels = skip_channels
         self.dilations = dilations
-        self.filter_widths = filter_widths
+        self.kernel_size = filter_widths
         self.num_decode_steps = num_decode_steps
         super(cnn, self).__init__(**kwargs)
 
@@ -178,7 +178,7 @@ class cnn(TFBaseModel):
 
             return self.x
 
-    def encode(self, x, features):
+    def encode(self, x, features, act_func=tf.nn.tanh):
         with tf.name_scope('Encoder'):
             x = tf.concat([x, features], axis=2)
 
@@ -191,28 +191,34 @@ class cnn(TFBaseModel):
 
             skip_outputs = []
             conv_inputs = [inputs]
-            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
-                dilated_conv = temporal_convolution_layer(
+            for i, (dilation, kernel_size) in enumerate(zip(self.dilations, self.kernel_size)):
+                data_flow = temporal_convolution_layer(
                     inputs=inputs,
-                    output_units=2*self.residual_channels,
-                    convolution_width=filter_width,
+                    output_units=self.residual_channels,
+                    convolution_width=kernel_size,
                     causal=True,
                     dilation_rate=dilation,
-                    scope='dilated-conv-encode-{}'.format(i)
+                    scope='enc_data_flow{}'.format(i)
                 )
-                conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
-                dilated_conv = tf.nn.tanh(conv_filter)*tf.nn.sigmoid(conv_gate)
+                gate_flow = temporal_convolution_layer(
+                    inputs=inputs,
+                    output_units=self.residual_channels,
+                    convolution_width=kernel_size,
+                    causal=True,
+                    dilation_rate=dilation,
+                    scope='enc_gate_flow{}'.format(i)
+                )
+                merge_flow = act_func(data_flow)*tf.nn.sigmoid(gate_flow)
 
-                outputs = time_distributed_dense_layer(
-                    inputs=dilated_conv,
-                    output_units=self.skip_channels + self.residual_channels,
-                    scope='dilated-conv-proj-encode-{}'.format(i)
+                residuals = time_distributed_dense_layer(
+                    inputs=merge_flow,
+                    output_units=self.residual_channels,
+                    scope='enc_residual{}'.format(i)
                 )
-                skips, residuals = tf.split(outputs, [self.skip_channels, self.residual_channels], axis=2)
 
                 inputs += residuals
                 conv_inputs.append(inputs)
-                skip_outputs.append(skips)
+                skip_outputs.append(residuals)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
             h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu)
@@ -233,7 +239,7 @@ class cnn(TFBaseModel):
 
             skip_outputs = []
             conv_inputs = [inputs]
-            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
+            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.kernel_size)):
                 dilated_conv = temporal_convolution_layer(
                     inputs=inputs,
                     output_units=2*self.residual_channels,
@@ -312,7 +318,6 @@ class cnn(TFBaseModel):
 
                     skip_outputs, updated_queues = [], []
                     for i, (conv_input, queue, dilation) in enumerate(zip(conv_inputs, queues, self.dilations)):
-
                         state = queue.read(time)
                         with tf.variable_scope('dilated-conv-decode-{}'.format(i), reuse=True):
                             w_conv = tf.get_variable('weights')

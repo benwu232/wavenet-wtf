@@ -315,6 +315,12 @@ class TFBaseModel(object):
 
             optimizer = self.get_optimizer(self.learning_rate_var)
             grads = optimizer.compute_gradients(loss)
+
+            '''
+            for i, (g, v_) in enumerate(grads):
+                #if i == 0 or g is None or v_ is None:
+                print(i, g, v_)
+            '''
             clipped = [(tf.clip_by_value(g, -self.grad_clip, self.grad_clip), v_) for g, v_ in grads]
 
             step = optimizer.apply_gradients(clipped, global_step=self.global_step)
