@@ -14,6 +14,8 @@ TEST = True
 TEST = False
 test_len = 3000
 
+LOG_TRANS = True
+
 class DataReader(object):
     def __init__(self, data_dir):
         data_cols = [
@@ -129,11 +131,17 @@ class cnn(TFBaseModel):
 
     # subtract mean
     def transform(self, x):
-        return tf.log1p(x) - tf.expand_dims(self.log_x_encode_mean, 1)
+        if LOG_TRANS:
+            return tf.log1p(x)
+        else:
+            return tf.log1p(x) - tf.expand_dims(self.log_x_encode_mean, 1)
 
     def inverse_transform(self, x):
         #return tf.exp(x + tf.expand_dims(self.log_x_encode_mean, 1)) - 1
-        return tf.expm1(x + tf.expand_dims(self.log_x_encode_mean, 1))
+        if LOG_TRANS:
+            return tf.expm1(x)
+        else:
+            return tf.expm1(x + tf.expand_dims(self.log_x_encode_mean, 1))
 
     def get_input_sequences(self):
         self.x_encode = tf.placeholder(tf.float32, [self.batch_size, None])
@@ -147,6 +155,19 @@ class cnn(TFBaseModel):
         self.project = tf.placeholder(tf.int32, [self.batch_size])
         self.access = tf.placeholder(tf.int32, [self.batch_size])
         self.agent = tf.placeholder(tf.int32, [self.batch_size])
+
+        if not TEST:
+            self.x_encode = tf.placeholder(tf.float32, [None, None])
+            self.encode_len = tf.placeholder(tf.int32, [None])
+            self.y_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
+            self.decode_len = tf.placeholder(tf.int32, [None])
+            self.is_nan_encode = tf.placeholder(tf.float32, [None, None])
+            self.is_nan_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
+
+            self.page_id = tf.placeholder(tf.int32, [None])
+            self.project = tf.placeholder(tf.int32, [None])
+            self.access = tf.placeholder(tf.int32, [None])
+            self.agent = tf.placeholder(tf.int32, [None])
 
         self.keep_prob = tf.placeholder(tf.float32)
         self.is_training = tf.placeholder(tf.bool)
@@ -257,8 +278,9 @@ class cnn(TFBaseModel):
         return y_hat
 
     def decode(self, x, conv_inputs, features):
-        #batch_size = tf.shape(x)[0]
-        batch_size = self.batch_size
+        batch_size = tf.shape(x)[0]
+        if TEST:
+            batch_size = self.batch_size
 
         # initialize state tensor arrays
         state_queues = []
@@ -429,4 +451,4 @@ if __name__ == '__main__':
 
     nn.fit()
     nn.restore()
-    nn.predict()
+    nn.predict(batch_size)

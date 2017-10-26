@@ -9,7 +9,7 @@ labels_mat = np.load(os.path.join('predictions', 'labels.npy'))
 priors_mat = np.load(os.path.join('predictions', 'priors.npy'))
 pages_mat = np.load(os.path.join('predictions', 'page_id.npy'))
 
-df = pd.read_csv('data/raw/train_final.csv', encoding='utf-8')
+df = pd.read_csv('data/raw/train_2.csv', encoding='utf-8')
 date_cols = [i for i in df.columns if i != 'Page']
 datetimes = pd.to_datetime(date_cols, format="%Y/%m/%d")
 next_date_cols = pd.date_range(start=datetimes[-1], periods=64, closed='right')
