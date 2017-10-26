@@ -101,11 +101,16 @@ class TFBaseModel(object):
         self.session = tf.Session(graph=self.graph)
         print('built graph')
 
+    def inference(self):
+        raise NotImplementedError('subclass must implement this')
+
     def calculate_loss(self):
         raise NotImplementedError('subclass must implement this')
 
     def fit(self):
         with self.session.as_default():
+            writer = tf.summary.FileWriter('./graphs/wavenet', self.session.graph)
+            writer.close()
 
             from tensorflow.python import debug as tf_debug
             #self.session = tf_debug.LocalCLIDebugWrapperSession(self.session)
@@ -303,32 +308,32 @@ class TFBaseModel(object):
         logging.getLogger().addHandler(logging.StreamHandler())
 
     def update_parameters(self, loss):
+        with tf.name_scope('UpdatePar'):
+            if self.regularization_constant != 0:
+                l2_norm = tf.reduce_sum([tf.sqrt(tf.reduce_sum(tf.square(param))) for param in tf.trainable_variables()])
+                loss = loss + self.regularization_constant*l2_norm
 
-        if self.regularization_constant != 0:
-            l2_norm = tf.reduce_sum([tf.sqrt(tf.reduce_sum(tf.square(param))) for param in tf.trainable_variables()])
-            loss = loss + self.regularization_constant*l2_norm
+            optimizer = self.get_optimizer(self.learning_rate_var)
+            grads = optimizer.compute_gradients(loss)
+            clipped = [(tf.clip_by_value(g, -self.grad_clip, self.grad_clip), v_) for g, v_ in grads]
 
-        optimizer = self.get_optimizer(self.learning_rate_var)
-        grads = optimizer.compute_gradients(loss)
-        clipped = [(tf.clip_by_value(g, -self.grad_clip, self.grad_clip), v_) for g, v_ in grads]
+            step = optimizer.apply_gradients(clipped, global_step=self.global_step)
 
-        step = optimizer.apply_gradients(clipped, global_step=self.global_step)
+            if self.enable_parameter_averaging:
+                maintain_averages_op = self.ema.apply(tf.trainable_variables())
+                with tf.control_dependencies([step]):
+                    self.step = tf.group(maintain_averages_op)
+            else:
+                self.step = step
 
-        if self.enable_parameter_averaging:
-            maintain_averages_op = self.ema.apply(tf.trainable_variables())
-            with tf.control_dependencies([step]):
-                self.step = tf.group(maintain_averages_op)
-        else:
-            self.step = step
+            logging.info('all parameters:')
+            logging.info(pp.pformat([(var.name, shape(var)) for var in tf.global_variables()]))
 
-        logging.info('all parameters:')
-        logging.info(pp.pformat([(var.name, shape(var)) for var in tf.global_variables()]))
+            logging.info('trainable parameters:')
+            logging.info(pp.pformat([(var.name, shape(var)) for var in tf.trainable_variables()]))
 
-        logging.info('trainable parameters:')
-        logging.info(pp.pformat([(var.name, shape(var)) for var in tf.trainable_variables()]))
-
-        logging.info('trainable parameter count:')
-        logging.info(str(np.sum(np.prod(shape(var)) for var in tf.trainable_variables())))
+            logging.info('trainable parameter count:')
+            logging.info(str(np.sum(np.prod(shape(var)) for var in tf.trainable_variables())))
 
     def get_optimizer(self, learning_rate):
         if self.optimizer == 'adam':
@@ -346,6 +351,7 @@ class TFBaseModel(object):
             self.global_step = tf.Variable(0, trainable=False)
             self.learning_rate_var = tf.Variable(0.0, trainable=False)
 
+            self.inference()
             self.loss = self.calculate_loss()
             self.update_parameters(self.loss)
 
