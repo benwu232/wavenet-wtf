@@ -10,11 +10,11 @@ from tf_utils import (
     sequence_mean, sequence_std, sequence_smape, shape
 )
 
-TEST = True
 TEST = False
+TEST = True
 
-test_len = 10000
 test_len = 5000
+test_len = 30000
 
 # 0: log1p, 1: log1p - mean, 2: (log1p - mean) / std
 TRANSFORM_TYPE = 1
@@ -134,7 +134,6 @@ class cnn(TFBaseModel):
 
     # subtract mean
     def transform(self, x):
-        return tf.log1p(x) - tf.expand_dims(self.log_x_encode_mean, 1)
         if TRANSFORM_TYPE == 0:
             return tf.log1p(x)
         elif TRANSFORM_TYPE == 1:
@@ -183,7 +182,7 @@ class cnn(TFBaseModel):
             self.is_training = tf.placeholder(tf.bool, name='is_training')
 
             self.log_x_encode_mean = sequence_mean(tf.log1p(self.x_encode), self.encode_len) #length is batch length
-            #self.log_x_encode_std = sequence_std(tf.log1p(self.x_encode), self.encode_len) #length is batch length
+            self.log_x_encode_std = sequence_std(tf.log1p(self.x_encode), self.encode_len) #length is batch length
             self.log_x_encode = self.transform(self.x_encode)
             self.x = tf.expand_dims(self.log_x_encode, 2)
 
@@ -191,7 +190,7 @@ class cnn(TFBaseModel):
                 tf.expand_dims(self.is_nan_encode, 2),
                 tf.expand_dims(tf.cast(tf.equal(self.x_encode, 0.0), tf.float32), 2),
                 tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
-                #tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
+                tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, tf.shape(self.x_encode)[1], 1)),
@@ -201,7 +200,7 @@ class cnn(TFBaseModel):
             self.decode_features = tf.concat([
                 tf.one_hot(decode_idx, self.num_decode_steps),
                 tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
-                #tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
+                tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, self.num_decode_steps, 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, self.num_decode_steps, 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, self.num_decode_steps, 1)),
@@ -446,7 +445,7 @@ if __name__ == '__main__':
 
     dr = DataReader(data_dir=os.path.join(base_dir, 'data/processed/'))
     if TEST:
-        batch_size = 12
+        batch_size = 16
     else:
         batch_size = 64
 
@@ -462,7 +461,7 @@ if __name__ == '__main__':
         early_stopping_steps=5000,
         warm_start_init_step=0,
         regularization_constant=0.0,
-        keep_prob=0.5,
+        keep_prob=0.8,
         enable_parameter_averaging=False,
         num_restarts=2,
         min_steps_to_checkpoint=500,
