@@ -98,7 +98,10 @@ class TFBaseModel(object):
         logging.info('\nnew run with parameters:\n{}'.format(pp.pformat(self.__dict__)))
 
         self.graph = self.build_graph()
-        self.session = tf.Session(graph=self.graph)
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.session = tf.Session(graph=self.graph, config=config)
         print('built graph')
 
     def inference(self):
@@ -143,7 +146,7 @@ class TFBaseModel(object):
 
                 val_feed_dict.update({self.learning_rate_var: self.learning_rate})
                 if hasattr(self, 'keep_prob'):
-                    val_feed_dict.update({self.keep_prob: 1.0})
+                    val_feed_dict.update({self.keep_prob: self.keep_prob_scalar})
                 if hasattr(self, 'is_training'):
                     val_feed_dict.update({self.is_training: False})
 

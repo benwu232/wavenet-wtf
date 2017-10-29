@@ -7,16 +7,17 @@ from data_frame import DataFrame
 from tf_base_model import TFBaseModel
 from tf_utils import (
     time_distributed_dense_layer, temporal_convolution_layer,
-    sequence_mean, sequence_smape, shape
+    sequence_mean, sequence_std, sequence_smape, shape
 )
 
-TEST = False
 TEST = True
+TEST = False
 
 test_len = 10000
 test_len = 5000
 
-LOG_TRANS = True
+# 0: log1p, 1: log1p - mean, 2: (log1p - mean) / std
+TRANSFORM_TYPE = 1
 
 class DataReader(object):
     def __init__(self, data_dir):
@@ -127,23 +128,29 @@ class cnn(TFBaseModel):
         self.residual_channels = residual_channels
         self.skip_channels = skip_channels
         self.dilations = dilations
-        self.filter_widths = filter_widths
+        self.kernel_size = filter_widths
         self.num_decode_steps = num_decode_steps
         super(cnn, self).__init__(**kwargs)
 
     # subtract mean
     def transform(self, x):
-        if LOG_TRANS:
+        return tf.log1p(x) - tf.expand_dims(self.log_x_encode_mean, 1)
+        if TRANSFORM_TYPE == 0:
             return tf.log1p(x)
-        else:
+        elif TRANSFORM_TYPE == 1:
             return tf.log1p(x) - tf.expand_dims(self.log_x_encode_mean, 1)
+        elif TRANSFORM_TYPE == 2:
+            normal = (tf.log1p(x) - tf.expand_dims(self.log_x_encode_mean, 1)) / tf.expand_dims(self.log_x_encode_std, 1)
+            return normal
 
     def inverse_transform(self, x):
         #return tf.exp(x + tf.expand_dims(self.log_x_encode_mean, 1)) - 1
-        if LOG_TRANS:
+        if TRANSFORM_TYPE == 0:
             return tf.expm1(x)
-        else:
+        elif TRANSFORM_TYPE == 1:
             return tf.expm1(x + tf.expand_dims(self.log_x_encode_mean, 1))
+        elif TRANSFORM_TYPE == 2:
+            return tf.expm1(x * tf.expand_dims(self.log_x_encode_std, 1) + tf.expand_dims(self.log_x_encode_mean, 1))
 
     def get_input_sequences(self):
         with tf.name_scope('InputData'):
@@ -176,6 +183,7 @@ class cnn(TFBaseModel):
             self.is_training = tf.placeholder(tf.bool, name='is_training')
 
             self.log_x_encode_mean = sequence_mean(tf.log1p(self.x_encode), self.encode_len) #length is batch length
+            #self.log_x_encode_std = sequence_std(tf.log1p(self.x_encode), self.encode_len) #length is batch length
             self.log_x_encode = self.transform(self.x_encode)
             self.x = tf.expand_dims(self.log_x_encode, 2)
 
@@ -183,6 +191,7 @@ class cnn(TFBaseModel):
                 tf.expand_dims(self.is_nan_encode, 2),
                 tf.expand_dims(tf.cast(tf.equal(self.x_encode, 0.0), tf.float32), 2),
                 tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
+                #tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, tf.shape(self.x_encode)[1], 1)),
@@ -192,6 +201,7 @@ class cnn(TFBaseModel):
             self.decode_features = tf.concat([
                 tf.one_hot(decode_idx, self.num_decode_steps),
                 tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
+                #tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, self.num_decode_steps, 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, self.num_decode_steps, 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, self.num_decode_steps, 1)),
@@ -199,7 +209,7 @@ class cnn(TFBaseModel):
 
             return self.x
 
-    def encode(self, x, features):
+    def encode(self, x, features, act_func=tf.nn.tanh, dropout_keep=None):
         with tf.name_scope('Encoder'):
             x = tf.concat([x, features], axis=2)
 
@@ -207,18 +217,20 @@ class cnn(TFBaseModel):
                 inputs=x,
                 output_units=self.residual_channels,
                 activation=tf.nn.tanh,
+                dropout=dropout_keep,
                 scope='x-proj-encode'
             )
 
             skip_outputs = []
             conv_inputs = [inputs]
-            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
+            for i, (dilation, kernel_size) in enumerate(zip(self.dilations, self.kernel_size)):
                 dilated_conv = temporal_convolution_layer(
                     inputs=inputs,
                     output_units=2*self.residual_channels,
-                    convolution_width=filter_width,
+                    convolution_width=kernel_size,
                     causal=True,
                     dilation_rate=dilation,
+                    dropout=dropout_keep,
                     scope='dilated-conv-encode-{}'.format(i)
                 )
                 conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
@@ -227,6 +239,7 @@ class cnn(TFBaseModel):
                 outputs = time_distributed_dense_layer(
                     inputs=dilated_conv,
                     output_units=self.skip_channels + self.residual_channels,
+                    dropout=dropout_keep,
                     scope='dilated-conv-proj-encode-{}'.format(i)
                 )
                 skips, residuals = tf.split(outputs, [self.skip_channels, self.residual_channels], axis=2)
@@ -236,12 +249,12 @@ class cnn(TFBaseModel):
                 skip_outputs.append(skips)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
-            h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu)
-            y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2')
+            h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu, dropout=dropout_keep)
+            y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2', dropout=dropout_keep)
 
             return y_hat, conv_inputs[:-1]
 
-    def initialize_decode_params(self, x, features):
+    def initialize_decode_params(self, x, features, dropout_keep=None):
         with tf.name_scope('PreDecoder'):
             x = tf.concat([x, features], axis=2)
 
@@ -249,18 +262,20 @@ class cnn(TFBaseModel):
                 inputs=x,
                 output_units=self.residual_channels,
                 activation=tf.nn.tanh,
+                dropout=dropout_keep,
                 scope='x-proj-decode'
             )
 
             skip_outputs = []
             conv_inputs = [inputs]
-            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.filter_widths)):
+            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.kernel_size)):
                 dilated_conv = temporal_convolution_layer(
                     inputs=inputs,
                     output_units=2*self.residual_channels,
                     convolution_width=filter_width,
                     causal=True,
                     dilation_rate=dilation,
+                    dropout=dropout_keep,
                     scope='dilated-conv-decode-{}'.format(i)
                 )
                 conv_filter, conv_gate = tf.split(dilated_conv, 2, axis=2)
@@ -269,6 +284,7 @@ class cnn(TFBaseModel):
                 outputs = time_distributed_dense_layer(
                     inputs=dilated_conv,
                     output_units=self.skip_channels + self.residual_channels,
+                    dropout=dropout_keep,
                     scope='dilated-conv-proj-decode-{}'.format(i)
                 )
                 skips, residuals = tf.split(outputs, [self.skip_channels, self.residual_channels], axis=2)
@@ -278,8 +294,8 @@ class cnn(TFBaseModel):
                 skip_outputs.append(skips)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
-            h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu)
-            y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2')
+            h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu, dropout=dropout_keep)
+            y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2', dropout=dropout_keep)
             return y_hat
 
     def decode(self, x, conv_inputs, features):
@@ -334,7 +350,6 @@ class cnn(TFBaseModel):
 
                     skip_outputs, updated_queues = [], []
                     for i, (conv_input, queue, dilation) in enumerate(zip(conv_inputs, queues, self.dilations)):
-
                         state = queue.read(time)
                         with tf.variable_scope('dilated-conv-decode-{}'.format(i), reuse=True):
                             w_conv = tf.get_variable('weights')
@@ -403,8 +418,8 @@ class cnn(TFBaseModel):
         with tf.name_scope('Inference'):
             x = self.get_input_sequences()
 
-            y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features)
-            self.initialize_decode_params(x, features=self.decode_features)
+            y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features, dropout_keep=self.keep_prob)
+            self.initialize_decode_params(x, features=self.decode_features, dropout_keep=self.keep_prob)
             y_hat_decode = self.decode(y_hat_encode, conv_inputs, features=self.decode_features)
             y_hat_decode = self.inverse_transform(tf.squeeze(y_hat_decode, 2))
             y_hat_decode = tf.nn.relu(y_hat_decode)
@@ -433,7 +448,7 @@ if __name__ == '__main__':
     if TEST:
         batch_size = 12
     else:
-        batch_size = 128
+        batch_size = 64
 
     nn = cnn(
         reader=dr,
@@ -447,7 +462,7 @@ if __name__ == '__main__':
         early_stopping_steps=5000,
         warm_start_init_step=0,
         regularization_constant=0.0,
-        keep_prob=1.0,
+        keep_prob=0.5,
         enable_parameter_averaging=False,
         num_restarts=2,
         min_steps_to_checkpoint=500,

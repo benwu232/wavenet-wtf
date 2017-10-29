@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def temporal_convolution_layer(inputs, output_units, convolution_width, causal=False, dilation_rate=[1], bias=True,
+def temporal_convolution_layer(inputs, output_units, convolution_width, causal=False, dilation_rate=1, bias=True,
                                activation=None, dropout=None, scope='temporal-convolution-layer', reuse=False):
     """
     Convolution over the temporal axis of sequence data.
@@ -46,8 +46,10 @@ def temporal_convolution_layer(inputs, output_units, convolution_width, causal=F
         if activation:
             z = activation(z)
 
-        if dropout and dropout > 0:
-            z = tf.nn.dropout(z, dropout)
+        #if dropout and dropout > 0:
+        #    z = tf.nn.dropout(z, dropout)
+
+        z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
 
         if causal:
             z = z[:, :-pad_len, :]
@@ -56,6 +58,11 @@ def temporal_convolution_layer(inputs, output_units, convolution_width, causal=F
         #z = z[:, :-shift, :] if causal else z
         return z
 
+def time_distributed_dense_layer1(inputs, output_units, bias=True, activation=None, batch_norm=None,
+                                 dropout=None, scope='time-distributed-dense-layer', reuse=False):
+    return tf.layers.conv1d(inputs, filters=output_units, kernel_size=1, padding="SAME", name=scope)
+    #return temporal_convolution_layer(inputs, output_units, 1, causal=False, dilation_rate=1, bias=bias,
+    #                           activation=activation, dropout=dropout, scope=scope, reuse=reuse)
 
 def time_distributed_dense_layer(inputs, output_units, bias=True, activation=None, batch_norm=None,
                                  dropout=None, scope='time-distributed-dense-layer', reuse=False):
@@ -94,8 +101,10 @@ def time_distributed_dense_layer(inputs, output_units, bias=True, activation=Non
         if activation:
             z = activation(z)
 
-        if dropout and dropout > 0:
-            z = tf.nn.dropout(z, dropout)
+        #if dropout and dropout > 0:
+        #    z = tf.nn.dropout(z, dropout)
+
+        z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
         #z = activation(z) if activation else z
         #z = tf.nn.dropout(z, dropout) if dropout is not None else z
         return z
@@ -129,3 +138,15 @@ def sequence_smape(y, y_hat, sequence_lengths, is_nan):
 
 def sequence_mean(x, lengths):
     return tf.reduce_sum(x, axis=1) / tf.cast(lengths, tf.float32)
+
+def sequence_std(x, lengths):
+    seq_mean = sequence_mean(x, lengths)
+    seq_var = sequence_mean(tf.square(x), lengths) - tf.square(seq_mean)
+    return tf.sqrt(seq_var)
+
+def sequence_std2(x, lengths):
+    seq_mean = sequence_mean(x, lengths)
+    square = tf.square(x - seq_mean)
+    seq_var = sequence_mean(square, lengths)
+    return tf.sqrt(seq_var)
+
