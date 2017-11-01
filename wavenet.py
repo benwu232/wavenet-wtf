@@ -13,11 +13,12 @@ from tf_utils import (
 TEST = False
 TEST = True
 
-test_len = 5000
 test_len = 30000
+test_len = 5000
 
 # 0: log1p, 1: log1p - mean, 2: (log1p - mean) / std
 TRANSFORM_TYPE = 1
+DECODE_STEPS = 64
 
 class DataReader(object):
     def __init__(self, data_dir):
@@ -82,7 +83,7 @@ class DataReader(object):
         data_col = 'test_data' if is_test else 'data'
         is_nan_col = 'test_is_nan' if is_test else 'is_nan'
         for batch in batch_gen:
-            num_decode_steps = 64
+            num_decode_steps = DECODE_STEPS
             full_seq_len = batch[data_col].shape[1]
             max_encode_length = full_seq_len - num_decode_steps if not is_test else full_seq_len
 
@@ -114,15 +115,14 @@ class DataReader(object):
             yield batch
 
 
-class cnn(TFBaseModel):
-
+class WaveNetEncDec(TFBaseModel):
     def __init__(
         self,
         residual_channels=32,
         skip_channels=32,
         dilations=[2**i for i in range(8)]*3,
         filter_widths=[2 for i in range(8)]*3,
-        num_decode_steps=64,
+        num_decode_steps=DECODE_STEPS,
         **kwargs
     ):
         self.residual_channels = residual_channels
@@ -130,7 +130,7 @@ class cnn(TFBaseModel):
         self.dilations = dilations
         self.kernel_size = filter_widths
         self.num_decode_steps = num_decode_steps
-        super(cnn, self).__init__(**kwargs)
+        super(WaveNetEncDec, self).__init__(**kwargs)
 
     # subtract mean
     def transform(self, x):
@@ -312,6 +312,8 @@ class cnn(TFBaseModel):
                     batch_idx = tf.reshape(batch_idx, [-1])
 
                     queue_begin_time = self.encode_len - dilation - 1
+                    #tmp1 = tf.expand_dims(queue_begin_time, 1)
+                    #tmp2 = tf.expand_dims(tf.range(dilation), 0)
                     temporal_idx = tf.expand_dims(queue_begin_time, 1) + tf.expand_dims(tf.range(dilation), 0)
                     temporal_idx = tf.reshape(temporal_idx, [-1])
 
@@ -445,11 +447,11 @@ if __name__ == '__main__':
 
     dr = DataReader(data_dir=os.path.join(base_dir, 'data/processed/'))
     if TEST:
-        batch_size = 16
+        batch_size = 32
     else:
         batch_size = 64
 
-    nn = cnn(
+    nn = WaveNetEncDec(
         reader=dr,
         log_dir=os.path.join(base_dir, 'logs'),
         checkpoint_dir=os.path.join(base_dir, 'checkpoints'),
@@ -472,7 +474,7 @@ if __name__ == '__main__':
         skip_channels=32,
         dilations=[2**i for i in range(8)]*3,
         filter_widths=[2 for i in range(8)]*3,
-        num_decode_steps=64,
+        num_decode_steps=DECODE_STEPS,
     )
 
 

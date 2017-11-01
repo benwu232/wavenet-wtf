@@ -131,7 +131,7 @@ def sequence_smape(y, y_hat, sequence_lengths, is_nan):
         smape = tf.where(tf.logical_or(tf.equal(y, 0.0), tf.equal(y_hat, 0.0)), zero_loss, nonzero_loss)
 
         sequence_mask = tf.cast(tf.sequence_mask(sequence_lengths, maxlen=max_sequence_length), tf.float32)
-        sequence_mask = sequence_mask*(1 - is_nan)
+        sequence_mask = sequence_mask*(1 - is_nan) # 1 if not nan
         avg_smape = tf.reduce_sum(smape*sequence_mask) / tf.reduce_sum(sequence_mask)
         return avg_smape
 
