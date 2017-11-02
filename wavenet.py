@@ -10,11 +10,11 @@ from tf_utils import (
     sequence_mean, sequence_std, sequence_smape, shape
 )
 
-TEST = False
 TEST = True
+TEST = False
 
-test_len = 30000
 test_len = 5000
+test_len = 30000
 
 # 0: log1p, 1: log1p - mean, 2: (log1p - mean) / std
 TRANSFORM_TYPE = 1
@@ -248,7 +248,9 @@ class WaveNetEncDec(TFBaseModel):
                 skip_outputs.append(skips)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
+            skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
             h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu, dropout=dropout_keep)
+            h = tf.nn.dropout(h, self.keep_prob)
             y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2', dropout=dropout_keep)
 
             return y_hat, conv_inputs[:-1]
@@ -293,7 +295,9 @@ class WaveNetEncDec(TFBaseModel):
                 skip_outputs.append(skips)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
+            skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
             h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu, dropout=dropout_keep)
+            h = tf.nn.dropout(h, self.keep_prob)
             y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2', dropout=dropout_keep)
             return y_hat
 
@@ -422,6 +426,7 @@ class WaveNetEncDec(TFBaseModel):
             y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features, dropout_keep=self.keep_prob)
             self.initialize_decode_params(x, features=self.decode_features, dropout_keep=self.keep_prob)
             y_hat_decode = self.decode(y_hat_encode, conv_inputs, features=self.decode_features)
+            y_hat_decode = tf.nn.dropout(y_hat_decode, self.keep_prob)
             y_hat_decode = self.inverse_transform(tf.squeeze(y_hat_decode, 2))
             y_hat_decode = tf.nn.relu(y_hat_decode)
 
@@ -472,8 +477,8 @@ if __name__ == '__main__':
         grad_clip=20,
         residual_channels=32,
         skip_channels=32,
-        dilations=[2**i for i in range(8)]*3,
-        filter_widths=[2 for i in range(8)]*3,
+        dilations=[2**i for i in range(9)]*3,
+        filter_widths=[2 for i in range(9)]*3,
         num_decode_steps=DECODE_STEPS,
     )
 

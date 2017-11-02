@@ -49,7 +49,7 @@ def temporal_convolution_layer(inputs, output_units, convolution_width, causal=F
         #if dropout and dropout > 0:
         #    z = tf.nn.dropout(z, dropout)
 
-        z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
+        #z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
 
         if causal:
             z = z[:, :-pad_len, :]
@@ -104,7 +104,7 @@ def time_distributed_dense_layer(inputs, output_units, bias=True, activation=Non
         #if dropout and dropout > 0:
         #    z = tf.nn.dropout(z, dropout)
 
-        z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
+        #z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
         #z = activation(z) if activation else z
         #z = tf.nn.dropout(z, dropout) if dropout is not None else z
         return z
