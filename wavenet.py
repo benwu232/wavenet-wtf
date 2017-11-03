@@ -248,9 +248,9 @@ class WaveNetEncDec(TFBaseModel):
                 skip_outputs.append(skips)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
-            skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
+            #skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
             h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu, dropout=dropout_keep)
-            h = tf.nn.dropout(h, self.keep_prob)
+            #h = tf.nn.dropout(h, self.keep_prob)
             y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2', dropout=dropout_keep)
 
             return y_hat, conv_inputs[:-1]
@@ -295,9 +295,9 @@ class WaveNetEncDec(TFBaseModel):
                 skip_outputs.append(skips)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
-            skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
+            #skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
             h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu, dropout=dropout_keep)
-            h = tf.nn.dropout(h, self.keep_prob)
+            #h = tf.nn.dropout(h, self.keep_prob)
             y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2', dropout=dropout_keep)
             return y_hat
 
@@ -426,7 +426,7 @@ class WaveNetEncDec(TFBaseModel):
             y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features, dropout_keep=self.keep_prob)
             self.initialize_decode_params(x, features=self.decode_features, dropout_keep=self.keep_prob)
             y_hat_decode = self.decode(y_hat_encode, conv_inputs, features=self.decode_features)
-            y_hat_decode = tf.nn.dropout(y_hat_decode, self.keep_prob)
+            #y_hat_decode = tf.nn.dropout(y_hat_decode, self.keep_prob)
             y_hat_decode = self.inverse_transform(tf.squeeze(y_hat_decode, 2))
             y_hat_decode = tf.nn.relu(y_hat_decode)
 
@@ -468,7 +468,7 @@ if __name__ == '__main__':
         early_stopping_steps=5000,
         warm_start_init_step=0,
         regularization_constant=0.0,
-        keep_prob=0.8,
+        keep_prob=1.0,
         enable_parameter_averaging=False,
         num_restarts=2,
         min_steps_to_checkpoint=500,
@@ -477,8 +477,8 @@ if __name__ == '__main__':
         grad_clip=20,
         residual_channels=32,
         skip_channels=32,
-        dilations=[2**i for i in range(9)]*3,
-        filter_widths=[2 for i in range(9)]*3,
+        dilations=[2**i for i in range(10)]*3,
+        filter_widths=[2 for i in range(10)]*3,
         num_decode_steps=DECODE_STEPS,
     )
 
