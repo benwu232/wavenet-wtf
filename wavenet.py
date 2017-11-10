@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import tensorflow as tf
+import tensorflow.contrib.eager as tfe
 
 from data_frame import DataFrame
 from tf_base_model import TFBaseModel
@@ -9,6 +10,9 @@ from tf_utils import (
     time_distributed_dense_layer, temporal_convolution_layer,
     sequence_mean, sequence_std, sequence_smape, shape
 )
+
+# Turn on eager mode
+#tfe.enable_eager_execution()
 
 DBG = False
 DBG = True
@@ -190,7 +194,7 @@ class WaveNetEncDec(TFBaseModel):
                 tf.expand_dims(self.is_nan_encode, 2),
                 tf.expand_dims(tf.cast(tf.equal(self.x_encode, 0.0), tf.float32), 2),
                 tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
-                tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
+                #tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, tf.shape(self.x_encode)[1], 1)),
                 tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, tf.shape(self.x_encode)[1], 1)),
@@ -200,10 +204,10 @@ class WaveNetEncDec(TFBaseModel):
             self.decode_features = tf.concat([
                 tf.one_hot(decode_idx, self.num_decode_steps),
                 tf.tile(tf.reshape(self.log_x_encode_mean, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
-                tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
-                tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, self.num_decode_steps, 1)),
-                tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, self.num_decode_steps, 1)),
-                tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, self.num_decode_steps, 1)),
+                #tf.tile(tf.reshape(self.log_x_encode_std, (-1, 1, 1)), (1, self.num_decode_steps, 1)),
+                #tf.tile(tf.expand_dims(tf.one_hot(self.project, 9), 1), (1, self.num_decode_steps, 1)),
+                #tf.tile(tf.expand_dims(tf.one_hot(self.access, 3), 1), (1, self.num_decode_steps, 1)),
+                #tf.tile(tf.expand_dims(tf.one_hot(self.agent, 2), 1), (1, self.num_decode_steps, 1)),
             ], axis=2, name='aux_enc_features')
 
             return self.x
@@ -251,7 +255,7 @@ class WaveNetEncDec(TFBaseModel):
             #skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
             h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-encode-1', activation=tf.nn.relu, dropout=dropout_keep)
             #h = tf.nn.dropout(h, self.keep_prob)
-            y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2', dropout=dropout_keep)
+            y_hat = time_distributed_dense_layer(h, 1, scope='dense-encode-2', dropout=self.keep_prob)
 
             return y_hat, conv_inputs[:-1]
 
@@ -269,11 +273,11 @@ class WaveNetEncDec(TFBaseModel):
 
             skip_outputs = []
             conv_inputs = [inputs]
-            for i, (dilation, filter_width) in enumerate(zip(self.dilations, self.kernel_size)):
+            for i, (dilation, kernel_size) in enumerate(zip(self.dilations, self.kernel_size)):
                 dilated_conv = temporal_convolution_layer(
                     inputs=inputs,
                     output_units=2*self.residual_channels,
-                    convolution_width=filter_width,
+                    convolution_width=kernel_size,
                     causal=True,
                     dilation_rate=dilation,
                     dropout=dropout_keep,
@@ -295,11 +299,12 @@ class WaveNetEncDec(TFBaseModel):
                 skip_outputs.append(skips)
 
             skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=2))
-            #skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
-            h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu, dropout=dropout_keep)
-            #h = tf.nn.dropout(h, self.keep_prob)
-            y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2', dropout=dropout_keep)
-            return y_hat
+            ##skip_outputs = tf.nn.dropout(skip_outputs, self.keep_prob)
+            #h = time_distributed_dense_layer(skip_outputs, 128, scope='dense-decode-1', activation=tf.nn.relu, dropout=dropout_keep)
+            ##h = tf.nn.dropout(h, self.keep_prob)
+            #y_hat = time_distributed_dense_layer(h, 1, scope='dense-decode-2', dropout=dropout_keep)
+            features = time_distributed_dense_layer(skip_outputs, 64, scope='dense-decode-features', dropout=dropout_keep)
+            return features
 
     def decode(self, x, conv_inputs, features):
         with tf.name_scope('Decoder'):
@@ -374,6 +379,7 @@ class WaveNetEncDec(TFBaseModel):
                         updated_queues.append(queue.write(time + dilation, x_proj))
 
                     skip_outputs = tf.nn.relu(tf.concat(skip_outputs, axis=1))
+                    '''
                     with tf.variable_scope('dense-decode-1', reuse=True):
                         w_h = tf.get_variable('weights')
                         b_h = tf.get_variable('biases')
@@ -383,14 +389,19 @@ class WaveNetEncDec(TFBaseModel):
                         w_y = tf.get_variable('weights')
                         b_y = tf.get_variable('biases')
                         y_hat = tf.matmul(h, w_y) + b_y
+                    '''
+                    with tf.variable_scope('dense-decode-features', reuse=True):
+                        w_h = tf.get_variable('weights')
+                        b_h = tf.get_variable('biases')
+                        features = tf.nn.relu(tf.matmul(skip_outputs, w_h) + b_h)
 
                     elements_finished = (time >= self.decode_len)
                     finished = tf.reduce_all(elements_finished)
 
                     next_input = tf.cond(
                         finished,
-                        lambda: tf.zeros([batch_size, 1], dtype=tf.float32),
-                        lambda: y_hat
+                        lambda: tf.zeros([batch_size, 64], dtype=tf.float32),
+                        lambda: features
                     )
                     next_elements_finished = (time >= self.decode_len - 1)
 
@@ -416,15 +427,17 @@ class WaveNetEncDec(TFBaseModel):
             )
 
             outputs_ta = returned[2]
-            y_hat = tf.transpose(outputs_ta.stack(), (1, 0, 2))
+            outputs_tensor = outputs_ta.stack()
+            y_hat = time_distributed_dense_layer(outputs_tensor, 1, scope='dense-decode-final', dropout=self.keep_prob)
+            y_hat = tf.transpose(y_hat, (1, 0, 2))
             return y_hat
 
     def inference(self):
         with tf.name_scope('Inference'):
             x = self.get_input_sequences()
 
-            y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features, dropout_keep=self.keep_prob)
-            self.initialize_decode_params(x, features=self.decode_features, dropout_keep=self.keep_prob)
+            y_hat_encode, conv_inputs = self.encode(x, features=self.encode_features, dropout_keep=None)
+            self.initialize_decode_params(x, features=self.decode_features, dropout_keep=None)
             y_hat_decode = self.decode(y_hat_encode, conv_inputs, features=self.decode_features)
             #y_hat_decode = tf.nn.dropout(y_hat_decode, self.keep_prob)
             y_hat_decode = self.inverse_transform(tf.squeeze(y_hat_decode, 2))
@@ -468,7 +481,7 @@ if __name__ == '__main__':
         early_stopping_steps=5000,
         warm_start_init_step=0,
         regularization_constant=0.0,
-        keep_prob=1.0,
+        keep_prob=0.5,
         enable_parameter_averaging=False,
         num_restarts=2,
         min_steps_to_checkpoint=500,
@@ -477,8 +490,8 @@ if __name__ == '__main__':
         grad_clip=20,
         residual_channels=32,
         skip_channels=32,
-        dilations=[2**i for i in range(10)]*3,
-        filter_widths=[2 for i in range(10)]*3,
+        dilations=[2**i for i in range(9)]*3,
+        filter_widths=[2 for i in range(9)]*3,
         num_decode_steps=DECODE_STEPS,
     )
 

@@ -101,10 +101,12 @@ def time_distributed_dense_layer(inputs, output_units, bias=True, activation=Non
         if activation:
             z = activation(z)
 
-        #if dropout and dropout > 0:
+        #if dropout is not None and dropout < 1.0 and dropout > 0:
         #    z = tf.nn.dropout(z, dropout)
 
-        #z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
+        if dropout is not None:
+            z = tf.cond(tf.cast(dropout, tf.bool), lambda: tf.nn.dropout(z, dropout), lambda: z)
+
         #z = activation(z) if activation else z
         #z = tf.nn.dropout(z, dropout) if dropout is not None else z
         return z
