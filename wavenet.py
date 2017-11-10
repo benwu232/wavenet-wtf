@@ -481,7 +481,7 @@ if __name__ == '__main__':
         early_stopping_steps=5000,
         warm_start_init_step=0,
         regularization_constant=0.0,
-        keep_prob=0.5,
+        keep_prob=0.6,
         enable_parameter_averaging=False,
         num_restarts=2,
         min_steps_to_checkpoint=500,
