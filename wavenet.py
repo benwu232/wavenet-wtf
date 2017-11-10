@@ -10,11 +10,11 @@ from tf_utils import (
     sequence_mean, sequence_std, sequence_smape, shape
 )
 
-TEST = True
-TEST = False
+DBG = False
+DBG = True
 
-test_len = 5000
-test_len = 30000
+dbg_len = 30000
+dbg_len = 5000
 
 # 0: log1p, 1: log1p - mean, 2: (log1p - mean) / std
 TRANSFORM_TYPE = 1
@@ -34,10 +34,10 @@ class DataReader(object):
         ]
         data = [np.load(os.path.join(data_dir, '{}.npy'.format(i))) for i in data_cols]
 
-        if TEST:
+        if DBG:
             # for experiment
             for k in range(len(data)):
-                data[k] = data[k][:test_len]
+                data[k] = data[k][:dbg_len]
 
         self.test_df = DataFrame(columns=data_cols, data=data)
         self.train_df, self.val_df = self.test_df.train_test_split(train_size=0.95)
@@ -165,7 +165,7 @@ class WaveNetEncDec(TFBaseModel):
             self.access = tf.placeholder(tf.int32, [self.batch_size], name='access')
             self.agent = tf.placeholder(tf.int32, [self.batch_size], name='agent')
 
-            if not TEST:
+            if not DBG:
                 self.x_encode = tf.placeholder(tf.float32, [None, None])
                 self.encode_len = tf.placeholder(tf.int32, [None])
                 self.y_decode = tf.placeholder(tf.float32, [None, self.num_decode_steps])
@@ -304,7 +304,7 @@ class WaveNetEncDec(TFBaseModel):
     def decode(self, x, conv_inputs, features):
         with tf.name_scope('Decoder'):
             batch_size = tf.shape(x)[0]
-            if TEST:
+            if DBG:
                 batch_size = self.batch_size
 
             # initialize state tensor arrays
@@ -451,7 +451,7 @@ if __name__ == '__main__':
     base_dir = './'
 
     dr = DataReader(data_dir=os.path.join(base_dir, 'data/processed/'))
-    if TEST:
+    if DBG:
         batch_size = 32
     else:
         batch_size = 64
